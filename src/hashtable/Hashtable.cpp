@@ -7,11 +7,11 @@
 #include <fcntl.h>
 #include <immintrin.h>
 #include <iostream>
+#include <mutex>
+#include <numa.h>
 #include <sys/mman.h>
 #include <thread>
 #include <unordered_map>
-#include <mutex>
-
 #define ALIGN(ptr, align) (((ptr) + (align) - 1) & ~((align) - 1))
 
 void *fastMemcpy(uint8_t *dest, const uint8_t *src, size_t n)
@@ -1595,27 +1595,27 @@ long Hashtable<KeyType, ValType, pType>::count() {
 
 template <class KeyType, class ValType, PartitionType pType>
 Hashtable<KeyType, ValType, pType>::~Hashtable() {
-    munmap(directories[0], max_directory_entries_size);
-    munmap(buckets, max_num_buckets * sizeof(Bucket));
+    // munmap(directories[0], max_directory_entries_size);
+    // munmap(buckets, max_num_buckets * sizeof(Bucket));
 
-    close(directories_fd);
-    close(buckets_fd);
-    close(metadata_fd);
+    // close(directories_fd);
+    // close(buckets_fd);
+    // close(metadata_fd);
 
 
-    for (int idx = 0; idx < LOG_NUM; ++idx) {
-        munmap(logs[idx].chunks[0].entries, LOG_MEMORY_SIZE);
-        int fd = log_fds[idx];
-        close(fd);
-    }
+    // for (int idx = 0; idx < LOG_NUM; ++idx) {
+    //     munmap(logs[idx].chunks[0].entries, LOG_MEMORY_SIZE);
+    //     int fd = log_fds[idx];
+    //     close(fd);
+    // }
 
-    if constexpr (!std::is_integral_v<KeyType>) {
-        for (int idx = 0; idx < PAYLOAD_LOG_NUM; ++idx) {
-            munmap(payload_logs[idx].chunks[0].entries, PAYLOAD_LOG_MEMORY_SIZE);
-            int fd = payload_log_fds[idx];
-            close(fd);
-        }
-    }
+    // if constexpr (!std::is_integral_v<KeyType>) {
+    //     for (int idx = 0; idx < PAYLOAD_LOG_NUM; ++idx) {
+    //         munmap(payload_logs[idx].chunks[0].entries, PAYLOAD_LOG_MEMORY_SIZE);
+    //         int fd = payload_log_fds[idx];
+    //         close(fd);
+    //     }
+    // }
 }
 
 template <class KeyType, class ValType, PartitionType pType>
@@ -1821,21 +1821,30 @@ Hashtable<KeyType, ValType, pType>::Hashtable(const std::string &pmem_dir, bool 
 
 template <class KeyType, class ValType, PartitionType pType>
 int Hashtable<KeyType, ValType, pType>::mmap_pmem_file(const std::string &filename, size_t max_size, char** target) {
-    int fd = open(filename.c_str(), O_CREAT | O_RDWR, 0666);
-    if (fd < 0) {
-        throw std::runtime_error("Could not open file at storage location: " + filename);
+    if (eSM == 1) {
+        int fd = open(filename.c_str(), O_CREAT | O_RDWR, 0666);
+        if (fd < 0) {
+            throw std::runtime_error("Could not open file at storage location: " + filename);
+        }
+
+
+        if ((errno = ftruncate(fd, max_size)) != 0) {
+            throw std::runtime_error(
+                    "Could not allocate " + std::to_string(max_size) + " bytes at storage location: " + filename);
+        }
+        *target = static_cast<char *>(mmap(nullptr, max_size, PROT_READ | PROT_WRITE, MAP_SYNC | MAP_SHARED_VALIDATE | MAP_POPULATE, fd, 0));
+        madvise(target, max_size, MADV_SEQUENTIAL);
+        return fd;
+    } else if (eSM == 2) {
+        std::cout << "Using CXL." << std::endl;
+        char *temp = static_cast<char *>(numa_alloc_onnode(max_size, CXL_NODE));
+        *target = temp;
+        std::cout << max_size << " " << (size_t) temp << " " << target << std::endl;
+        if (temp == nullptr) {
+            getchar();
+        }
+        return 0;
     }
-
-
-    if ((errno = ftruncate(fd, max_size)) != 0) {
-        throw std::runtime_error(
-                "Could not allocate " + std::to_string(max_size) + " bytes at storage location: " + filename);
-    }
-
-    *target = static_cast<char *>(mmap(nullptr, max_size, PROT_READ | PROT_WRITE, MAP_SYNC | MAP_SHARED_VALIDATE | MAP_POPULATE, fd, 0));
-
-    madvise(target, max_size, MADV_SEQUENTIAL);
-    return fd;
 }
 
 template <class KeyType, class ValType, PartitionType pType>

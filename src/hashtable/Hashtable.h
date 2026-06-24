@@ -22,7 +22,8 @@
 
 #define LOG_METRICS 1
 #define LOG_DEBUG 0
-
+extern int eSM;// 0:DRAM, 1:PM, 2:CXL
+extern int CXL_NODE;
 enum PartitionType { Hash, Range };
 
 template <class KeyType, class ValType, PartitionType pType>
@@ -43,8 +44,8 @@ private:
     static constexpr uint64_t TOMBSTONE_MARKER = 0xFEEDC0FFEE22AA77;
 
     // Constants
-    static constexpr int DRAM_BITS = 16;
-    static constexpr const int PMEM_BITS = 16;
+    static constexpr int DRAM_BITS = 10;
+    static constexpr const int PMEM_BITS = 10;
     static constexpr const int FANOUT_BITS = 4;
     static constexpr const int DRAM_SUBDIVISION_BITS = 4;
     static constexpr const int LOG_NUM_BITS = 6;
