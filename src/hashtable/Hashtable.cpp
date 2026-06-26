@@ -12,6 +12,7 @@
 #include <sys/mman.h>
 #include <thread>
 #include <unordered_map>
+#include <algorithm>
 #define ALIGN(ptr, align) (((ptr) + (align) - 1) & ~((align) - 1))
 
 void *fastMemcpy(uint8_t *dest, const uint8_t *src, size_t n)
@@ -1081,7 +1082,8 @@ void Hashtable<KeyType, ValType, pType>::rehash(Bucket &bucket, int size, int le
 
         uint64_t *first = keys + (directory_idx * MAX_VALUES_PER_BUCKET_AFTER_REHASH);
         uint64_t *last = keys + (directory_idx * MAX_VALUES_PER_BUCKET_AFTER_REHASH + sizes[directory_idx]);
-        uint64_t *pos = std::find(first, last, bucket.keys[key_idx]);
+        uint64_t target_key = bucket.keys[key_idx].load(std::memory_order_relaxed); 
+        uint64_t *pos = std::find(first, last, target_key);
 
 
         if (pos != last) {
